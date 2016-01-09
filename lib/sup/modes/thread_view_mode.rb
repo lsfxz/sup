@@ -845,14 +845,13 @@ EOS
     when :spam
       m.add_label :spam unless m.has_label? :spam
       m.remove_label :unsure if m.has_label? :unsure
-      m.add_label :inbox unless m.has_label? :inbox
+      m.remove_label :inbox unless m.has_label? :inbox
       m.remove_label :unread if m.has_label? :unread
     end
-    # UpdateManager.relay self, :single_message_deleted, m unless m  ##this needs to be in the hook
     Index.save_message m
     HookManager.run("mark-spam-explicitely", :message => m, :action => what)
     regen_text ## ? TODO
-    reload ## needed? TODO
+    reload ## needed? TODO maybe not unless messages are deleted? (as in: on HD?)
   end
 
 

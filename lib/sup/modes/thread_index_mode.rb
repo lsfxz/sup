@@ -1028,7 +1028,7 @@ protected
     thread = cursor_thread or return
     case what
     when :ham
-      thread.each do |m| #actually messages..
+      thread.each do |m|
         next if !m or m == :fake_root
         next if m.has_label? :sent
         m.remove_label :spam if m.has_label? :spam
@@ -1037,22 +1037,18 @@ protected
         Index.save_message m
         HookManager.run("mark-spam-explicitely", :message => m, :action => what)
       end
-      # hide_thread thread
-      # UpdateManager.relay self, :unspammed, thread.first
+
     when :spam
       thread.each do |m|
         next if !m or m == :fake_root
         next if m.has_label? :sent
         m.add_label :spam unless m.has_label? :spam
-        ## debug "spam added?: #{m.has_label? :spam} m.id: #{m.id}"
         m.remove_label :unsure if m.has_label? :unsure
         m.remove_label :inbox if m.has_label? :inbox
         m.remove_label :unread if m.has_label? :unread
         Index.save_message m
         HookManager.run("mark-spam-explicitely", :message => m, :action => what)
       end
-      # hide_thread thread
-      # UpdateManager.relay self, :spammed, thread.first
     end
     regen_text # ??
     reload
