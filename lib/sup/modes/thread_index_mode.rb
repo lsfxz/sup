@@ -28,6 +28,13 @@ Variables:
   thread: The message thread being marked as spam.
 EOS
 
+HookManager.register "mark-spam-explicitely", <<EOS
+This hook is run when a message is explicitely marked as spam or ham.
+Variables:
+  message: The message being marked as spam/ham.
+  action: What it is doing with it.
+EOS
+
   register_keymap do |k|
     k.add :load_threads, "Load #{LOAD_MORE_THREAD_NUM} more threads", 'M'
     k.add_multi "Load all threads (! to confirm) :", '!' do |kk|
@@ -42,6 +49,10 @@ EOS
     k.add :edit_labels, "Edit or add labels for a thread", 'l'
     k.add :edit_message, "Edit message (drafts only)", 'e'
     k.add :toggle_spam, "Mark/unmark thread as spam", 'S'
+    k.add_multi "Mark thread as ([s]pam or [h]am) :", 'b' do |kk|
+      kk.add :mark_spam_exp_thread_spam, "Explicitely mark thread as spam", 's'
+      kk.add :mark_spam_exp_thread_ham, "Explicitely mark thread as ham", 'h'
+    end
     k.add :toggle_deleted, "Delete/undelete thread", 'd'
     k.add :kill, "Kill thread (never to be seen in inbox again)", '&'
     k.add :flush_index, "Flush all changes now", '$'
@@ -1009,6 +1020,43 @@ protected
   end
 
   def dirty?; @mutex.synchronize { (@hidden_threads.keys + @threads).any? { |t| t.dirty? } } end
+
+  def mark_spam_exp_thread_spam; mark_spam_exp_thread(:spam) end
+  def mark_spam_exp_thread_ham; mark_spam_exp_thread(:ham) end
+
+  def mark_spam_exp_thread(what)
+    thread = cursor_thread or return
+    case what
+    when :ham
+      thread.each do |m| #actually messages..
+        next if !m or m == :fake_root
+        next if m.has_label? :sent
+        m.remove_label :spam if m.has_label? :spam
+        m.remove_label :unsure if m.has_label? :unsure
+        m.add_label :inbox unless m.has_label? :inbox
+        Index.save_message m
+        HookManager.run("mark-spam-explicitely", :message => m, :action => what)
+      end
+      # hide_thread thread
+      # UpdateManager.relay self, :unspammed, thread.first
+    when :spam
+      thread.each do |m|
+        next if !m or m == :fake_root
+        next if m.has_label? :sent
+        m.add_label :spam unless m.has_label? :spam
+        ## debug "spam added?: #{m.has_label? :spam} m.id: #{m.id}"
+        m.remove_label :unsure if m.has_label? :unsure
+        m.remove_label :inbox if m.has_label? :inbox
+        m.remove_label :unread if m.has_label? :unread
+        Index.save_message m
+        HookManager.run("mark-spam-explicitely", :message => m, :action => what)
+      end
+      # hide_thread thread
+      # UpdateManager.relay self, :spammed, thread.first
+    end
+    regen_text # ??
+    reload
+  end
 
 private
 

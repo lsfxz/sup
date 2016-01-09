@@ -32,6 +32,13 @@ Return value:
   which will be appended by sup.
 EOS
 
+HookManager.register "mark-spam-explicitely", <<EOS
+This hook is run when a message is explicitely marked as spam or ham.
+Variables:
+  message: The message being marked as spam/ham.
+  action: What it is doing with it.
+EOS
+
   HookManager.register "publish", <<EOS
 Executed when a message or a chunk is requested to be published.
 Variables:
@@ -81,6 +88,11 @@ EOS
     k.add :subscribe_to_list, "Subscribe to/unsubscribe from mailing list", "("
     k.add :unsubscribe_from_list, "Subscribe to/unsubscribe from mailing list", ")"
     k.add :pipe_message, "Pipe message or attachment to a shell command", '|'
+
+    k.add_multi "Mark message as ([s]pam or [h]am) :", 'b' do |kk|
+      kk.add :mark_spam_exp_msg_spam, "Explicitely mark message as spam", 's'
+      kk.add :mark_spam_exp_msg_ham, "Explicitely mark message as ham", 'h'
+    end
 
     k.add :archive_and_next, "Archive this thread, kill buffer, and view next", 'a'
     k.add :delete_and_next, "Delete this thread, kill buffer, and view next", 'd'
@@ -205,7 +217,7 @@ EOS
     @layout[m].state = (@layout[m].state == :detailed ? :open : :detailed)
     update
   end
-  
+
   def reload
     update
   end
@@ -818,6 +830,31 @@ EOS
     message.reload_from_source!
     update
   end
+
+  def mark_spam_exp_msg_spam; mark_spam_exp_msg(:spam) end
+  def mark_spam_exp_msg_ham; mark_spam_exp_msg(:ham) end
+
+  def mark_spam_exp_msg(what)
+    m = @message_lines[curpos] or return
+    if !m or m == :fake_root or m.has_label? :sent then return end
+    case what
+    when :ham
+      m.remove_label :spam if m.has_label? :spam
+      m.remove_label :unsure if m.has_label? :unsure
+      m.add_label :inbox unless m.has_label? :inbox
+    when :spam
+      m.add_label :spam unless m.has_label? :spam
+      m.remove_label :unsure if m.has_label? :unsure
+      m.add_label :inbox unless m.has_label? :inbox
+      m.remove_label :unread if m.has_label? :unread
+    end
+    # UpdateManager.relay self, :single_message_deleted, m unless m  ##this needs to be in the hook
+    Index.save_message m
+    HookManager.run("mark-spam-explicitely", :message => m, :action => what)
+    regen_text ## ? TODO
+    reload ## needed? TODO
+  end
+
 
 private
 
