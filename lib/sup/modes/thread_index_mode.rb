@@ -1050,7 +1050,7 @@ protected
         HookManager.run("mark-spam-explicitely", :message => m, :action => what)
       end
     end
-    regen_text # ??
+    regen_text # ??  //hide_thread instead?
     reload
   end
 

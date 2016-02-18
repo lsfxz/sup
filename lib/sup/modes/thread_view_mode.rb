@@ -837,6 +837,7 @@ EOS
   def mark_spam_exp_msg(what)
     m = @message_lines[curpos] or return
     if !m or m == :fake_root or m.has_label? :sent then return end
+    debug 'actually marking something.' ##or: doeth_m=xyz actually work?
     case what
     when :ham
       m.remove_label :spam if m.has_label? :spam
@@ -850,7 +851,7 @@ EOS
     end
     Index.save_message m
     HookManager.run("mark-spam-explicitely", :message => m, :action => what)
-    regen_text ## ? TODO
+    regen_text ## ? TODO -> should I "hide" the messages?
     reload ## needed? TODO maybe not unless messages are deleted? (as in: on HD?)
   end
 
