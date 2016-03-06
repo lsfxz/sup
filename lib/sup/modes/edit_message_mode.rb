@@ -118,8 +118,8 @@ EOS
     rescue
       nil
     end
-    hostname = Socket.gethostname if hostname.nil? or hostname.empty?
-
+    #hostname = Socket.gethostname if hostname.nil? or hostname.empty?
+    hostname = 'localhost'
     @message_id = "<#{Time.now.to_i}-sup-#{rand 10000}@#{hostname}>"
     @edited = false
     @sig_edited = false
