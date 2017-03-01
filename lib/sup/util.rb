@@ -366,8 +366,12 @@ class String
     # do this anyway in case string is set to be UTF-8, encoding to
     # something else (UTF-16 which can fully represent UTF-8) and back
     # ensures invalid chars are replaced.
-    encode!('UTF-16', 'UTF-8', :invalid => :replace, :undef => :replace)
-    encode!('UTF-8', 'UTF-16', :invalid => :replace, :undef => :replace)
+    # do not do this for Ruby 2.4.0p0, which may cause a crash. See
+    # https://github.com/sup-heliotrope/sup/issues/532
+    if RUBY_VERSION.to_f < 2.4
+      encode!('UTF-16', 'UTF-8', :invalid => :replace, :undef => :replace)
+      encode!('UTF-8', 'UTF-16', :invalid => :replace, :undef => :replace)
+    end
 
     fail "Could not create valid UTF-8 string out of: '#{self.to_s}'." unless valid_encoding?
 
@@ -451,6 +455,7 @@ end
 
 class Numeric
   def clamp min, max
+    max = min if max < min
     if self < min
       min
     elsif self > max
@@ -475,7 +480,7 @@ class Numeric
   end
 end
 
-class Fixnum
+class Integer
   def to_character
     if self < 128 && self >= 0
       chr
@@ -579,6 +584,16 @@ class Array
 
   def last= e; self[-1] = e end
   def nonempty?; !empty? end
+
+  def display_length
+    if size == 2 && last.is_a?(String)
+      # a single widget
+      last.display_length
+    else
+      # an array of widgets
+      map(&:display_length).inject(:+).to_i
+    end
+  end
 end
 
 ## simple singleton module. far less complete and insane than the ruby standard

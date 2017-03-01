@@ -6,6 +6,7 @@
 pkg/
 man/
 *.gem
+.localgems
 # i have accidently added this one one too many times
 sup-exception-log.txt
 
@@ -19,4 +20,6 @@ test/gnupg_test_home/trustdb.gpg
 test/gnupg_test_home/.gpg-v21-migrated
 test/gnupg_test_home/private-keys-v1.d
 
-
+# flag files
+.nobundle
+.nosup

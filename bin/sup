@@ -1,36 +1,20 @@
 #!/usr/bin/env ruby
 # encoding: utf-8
 
-$:.unshift File.join(File.dirname(__FILE__), *%w[.. lib])
-
-require 'ncursesw'
-
-require 'sup/util/ncurses'
-require 'sup/util/locale_fiddler'
-require 'sup/util/axe'
-
-no_gpgme = false
-begin
-  require 'gpgme'
-rescue LoadError
-  no_gpgme = true
-end
-
-require 'fileutils'
-require 'trollop'
-require "sup"
+require_relative '../lib/bootstrap'
 
 if ENV['SUP_PROFILE']
   require 'ruby-prof'
   RubyProf.start
 end
 
-if no_gpgme
-  info "No 'gpgme' gem detected. Install it for email encryption, decryption and signatures."
-end
+# load config early
+require 'sup/config'
+$config = Redwood::load_config Redwood::CONFIG_FN
+
+require 'trollop'
 
 $opts = Trollop::options do
-  version "sup v#{Redwood::VERSION}"
   banner <<EOS
 Sup is a curses-based email client.
 
@@ -49,6 +33,29 @@ EOS
 end
 
 Trollop::die :subject, "requires --compose" if $opts[:subject] && !$opts[:compose]
+
+# secret config option: no_threads
+$opts[:no_threads] = $config[:no_threads] if $config.key?(:no_threads)
+
+# config and command line are now parsed
+
+# startup progress
+require 'sup/startup'
+Redwood::StartupManager.say 'starting sup'
+
+require 'ncursesw'
+
+require 'sup/util/ncurses'
+require 'sup/util/locale_fiddler'
+require 'sup/util/axe'
+
+begin
+  require 'gpgme'
+rescue LoadError
+end
+
+require 'fileutils'
+require "sup"
 
 Redwood::HookManager.register "startup", <<EOS
 Executes at startup
@@ -96,6 +103,7 @@ global_keymap = Keymap.new do |k|
   k.add :show_inbox, "Show the Inbox buffer", 'I'
   k.add :clear_hooks, "Clear all hooks", 'H'
   k.add :show_console, "Show the Console buffer", '~'
+  k.add :roll_front_buffers, "Switch to next front (split) buffer", :ctrl_t
 
   ## Submap for less often used keybindings
   k.add_multi "reload (c)olors, rerun (k)eybindings hook", 'O' do |kk|
@@ -123,6 +131,7 @@ def start_cursing
   Ncurses.noecho
   Ncurses.cbreak
   Ncurses.stdscr.keypad 1
+  Ncurses.mousemask(Ncurses::ALL_MOUSE_EVENTS | Ncurses::REPORT_MOUSE_POSITION, []) if $config[:mouse]
   Ncurses.use_default_colors
   Ncurses.curs_set 0
   Ncurses.start_color
@@ -143,6 +152,7 @@ Index.lock_interactively or exit
 
 begin
   Redwood::start
+
   Index.load
   Redwood::check_syncback_settings
   Index.start_sync_worker unless $opts[:no_threads]
@@ -150,9 +160,12 @@ begin
   $die = false
   trap("TERM") { |x| $die = true }
   trap("WINCH") do |x|
-   ::Thread.new do
-     BufferManager.sigwinch_happened!
-   end
+    if $opts[:no_threads]
+      BufferManager.instance_eval { @sigwinch_happened = true }
+      Ncurses.ungetch ?\C-l.ord
+    else
+      ::Thread.new { BufferManager.sigwinch_happened! }
+    end
   end
 
   if(s = Redwood::SourceManager.source_for DraftManager.source_name)
@@ -333,6 +346,8 @@ begin
       end
     when :show_inbox
       BufferManager.raise_to_front ibuf
+    when :roll_front_buffers
+      BufferManager.focus_on BufferManager.next_front_buffer
     when :clear_hooks
       HookManager.clear
     when :show_console

@@ -2,7 +2,16 @@
 
 Sup is a console-based email client for people with a lot of email.
 
-<img src="http://supmua.org/images/old_screenshot_1.png" />
+![Screenshot](/screenshot/split-horizontal.png?raw=true)
+
+## New features in this fork
+
+- Basic mouse support.
+- [Patchwork](http://jk.ozlabs.org/projects/patchwork/) integration. As the `.`, `o`, `x` in the screenshot, patch states can be easily observed.
+- Async GUI editor support. You can edit multiple messages and browse other emails in Sup concurrently.
+- Split view (experimental). By setting `:split_view` to `:vertical` or `:horizontal`, you can have more buffers in one screen.
+- More flexible hooks. New hooks like `text-filter`, `collapsed-header` make things more flexible.
+- Various fixes and improvements. For example, respect editor's exit code, no more "bundle exec", better cygwin support, etc. Read commit log for details.
 
 ## Installation
 
@@ -35,7 +44,7 @@ Please report bugs to the [Github issue tracker](https://github.com/sup-heliotro
 
 ## Links
 
-* [Homepage](http://supmua.org/)
+* [Homepage](http://sup-heliotrope.github.io/)
 * [Code repository](https://github.com/sup-heliotrope/sup)
 * [Wiki](https://github.com/sup-heliotrope/sup/wiki)
 * IRC: [#sup @ freenode.net](http://webchat.freenode.net/?channels=#sup)

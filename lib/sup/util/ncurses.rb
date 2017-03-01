@@ -3,22 +3,30 @@ require 'sup/util'
 
 if defined? Ncurses
 module Ncurses
-
   ## Helper class for storing keycodes
   ## and multibyte characters.
   class CharCode < String
     ## Status code allows us to detect
     ## printable characters and control codes.
     attr_reader :status
+    attr_reader :mouseevent
 
     ## Reads character from user input.
-    def self.nonblocking_getwch
+    def self.nonblocking_getwch(win=nil)
+      $sigpipe ||= IO.pipe
       # If we get input while we're shelled, we'll ignore it for the
       # moment and use Ncurses.sync to wait until the shell_out is done.
-      begin
-        s, c = Redwood::BufferManager.shelled? ? Ncurses.sync { nil } : Ncurses.get_wch
+      s = c = nil
+      loop do
+        fds = IO.select([$stdin, $sigpipe[0]], nil, nil, 2).try {|x| x[0]}
+        # interrupted by sigpipe, but no real input comes in
+        if fds == [$sigpipe[0]]
+          $sigpipe[0].read(1)
+          break
+        end
+        s, c = Redwood::BufferManager.shelled? ? Ncurses.sync { nil } : (win || Ncurses).get_wch
         break if s != Ncurses::ERR
-      end until IO.select([$stdin], nil, nil, 2)
+      end
       [s, c]
     end
 
@@ -52,10 +60,16 @@ module Ncurses
 
     ## Gets character from input.
     ## Pretends ctrl-c's are ctrl-g's.
-    def self.get handle_interrupt=true
+    def self.get handle_interrupt=true, win: nil
       begin
-        status, code = nonblocking_getwch
-        generate code, status
+        status, code = nonblocking_getwch(win)
+        generate(code, status).tap do |c|
+          if code == Ncurses::KEY_MOUSE
+            mev = Ncurses::MEVENT.new
+            (win || Ncurses).getmouse(mev)
+            c.instance_eval { @mouseevent = mev }
+          end
+        end
       rescue Interrupt => e
         raise e unless handle_interrupt
         keycode Ncurses::KEY_CANCEL
@@ -76,7 +90,7 @@ module Ncurses
       @status = status
       c = "" if c.nil?
       return super("") if status == Ncurses::ERR
-      c = enc_char(c) if c.is_a?(Fixnum)
+      c = enc_char(c) if c.is_a?(Integer)
       super c.length > 1 ? c[0,1] : c
     end
 
@@ -89,7 +103,7 @@ module Ncurses
       else
         @status = Ncurses::OK
         c = "" if c.nil?
-        c = enc_char(c) if c.is_a?(Fixnum)
+        c = enc_char(c) if c.is_a?(Integer)
         super c.length > 1 ? c[0,1] : c
       end
     end
@@ -260,7 +274,7 @@ module Ncurses
       ## Ncurses::Form.form_driver_w wrapper for printable characters.
       def form_driver_char c
         form_driver CharCode.character(c)
-        #c.is_a?(Fixnum) ? c : c.ord
+        #c.is_a?(Integer) ? c : c.ord
       end
 
       ## Ncurses::Form.form_driver_w wrapper for charcodes.

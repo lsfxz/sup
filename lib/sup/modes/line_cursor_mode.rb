@@ -23,19 +23,35 @@ class LineCursorMode < ScrollMode
         sleep 0.5
         @load_more_q.pop until @load_more_q.empty?
       end
-    end
+    end unless $opts[:no_threads]
 
     super opts
   end
 
   def cleanup
-    @load_more_thread.kill
+    @load_more_thread.kill unless $opts[:no_threads]
     super
   end
 
   def draw
     super
     set_status
+  end
+
+  def handle_mouse_event mev
+    super mev
+    y = [mev.y + topline, lines - 1].min
+    case mev.bstate
+    when Ncurses::BUTTON1_CLICKED
+      set_cursor_pos y
+      true
+    when Ncurses::BUTTON1_DOUBLE_CLICKED
+      set_cursor_pos y
+      handle_input "\n"
+      true
+    else
+      false
+    end
   end
 
 protected
@@ -58,8 +74,14 @@ protected
     raise @curpos.inspect unless @curpos.is_a?(Integer)
     c = @curpos.clamp topline, botline - 1
     c = @cursor_top if c < @cursor_top
-    buffer.mark_dirty unless c == @curpos
-    @curpos = c
+    if c != @curpos
+      buffer.mark_dirty
+      # try to handle curpos changes due to resize
+      jump_to_line @topline + (@curpos - c) if c < @curpos
+      # recalculate c
+      c = @curpos.clamp topline, botline - 1
+      @curpos = c
+    end
   end
 
   def set_cursor_pos p
@@ -197,7 +219,11 @@ private
   end
 
   def call_load_more_callbacks size
-    @load_more_q.push size if $config[:load_more_threads_when_scrolling]
+    if $opts[:no_threads]
+      @load_more_callbacks.each { |c| c.call size }
+    else
+      @load_more_q.push size if $config[:load_more_threads_when_scrolling]
+    end
   end
 end
 end

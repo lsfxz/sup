@@ -20,6 +20,19 @@ Return value:
   None. The variable 'headers' should be modified in place.
 EOS
 
+  HookManager.register "collapsed-header", <<EOS
+Customize the content of the message header when it's collapsed. You can
+either modify the segments array, or return a new header string.
+
+Variables:
+      message: The message object
+     segments: An array of strings that will be concated to be the header
+
+Return value:
+  A string, which is used as the new header
+EOS
+
+
   HookManager.register "bounce-command", <<EOS
 Determines the command used to bounce a message.
 Variables:
@@ -322,6 +335,10 @@ EOS
     end
   end
 
+  def current_message
+    @message_lines[curpos]
+  end
+
   def edit_labels
     old_labels = @thread.labels
     reserved_labels = old_labels.select { |l| LabelManager::RESERVED_LABELS.include? l }
@@ -492,6 +509,15 @@ EOS
     end
   end
 
+  def jump_to_next
+    return continue_search_in_buffer if in_search? # hack: allow 'n' to apply to both operations
+    m = (curpos ... @message_lines.length).argfind { |i| @message_lines[i] }
+    return unless m
+    nextm = @layout[m].next
+    force_alignment = nil
+    jump_to_message nextm, force_alignment if nextm
+  end
+
   def jump_to_next_and_open
     return continue_search_in_buffer if in_search? # err.. don't know why im doing this
 
@@ -531,6 +557,20 @@ EOS
   def align_current_message
     m = @message_lines[curpos] or return
     jump_to_message m, true
+  end
+
+  def jump_to_prev
+    m = (0 .. curpos).to_a.reverse.argfind { |i| @message_lines[i] } # bah, .to_a
+    return unless m
+    ## jump to the top of the current message if we're in the body;
+    ## otherwise, to the previous message
+    top = @layout[m].top
+    if curpos == top
+      prevm = @layout[m].prev
+      jump_to_message prevm if prevm
+    else
+      jump_to_message m
+    end
   end
 
   def jump_to_prev_and_open force_alignment=nil
@@ -578,21 +618,10 @@ EOS
 
     ## boundaries of the message
     message_left = l.depth * @indent_spaces
-    message_right = message_left + l.width
-
-    ## calculate leftmost colum
-    left = if force_alignment # force mode: align exactly
-      message_left
-    else # regular: minimize cursor movement
-      ## leftmost and rightmost are boundaries of all valid left-column
-      ## alignments.
-      leftmost = [message_left, message_right - buffer.content_width + 1].min
-      rightmost = message_left
-      leftcol.clamp(leftmost, rightmost)
+    if force_alignment
+      jump_to_line l.top        # move vertically
+      jump_to_col message_left  # move horizontally
     end
-
-    jump_to_line l.top    # move vertically
-    jump_to_col left      # move horizontally
     set_cursor_pos l.top  # set cursor pos
   end
 
@@ -950,18 +979,26 @@ private
     attach_widget = [color, (m.has_label?(:attachment) ? "@" : " ")]
 
     case state
-    when :open
+    when :open, :closed
       @person_lines[start] = m.from
-      [[prefix_widget, open_widget, new_widget, attach_widget, starred_widget,
-        [color,
-            "#{m.from ? m.from.mediumname.fix_encoding! : '?'} to #{m.recipients.map { |l| l.shortname.fix_encoding! }.join(', ')} #{m.date.to_nice_s.fix_encoding!} (#{m.date.to_nice_distance_s.fix_encoding!})"]]]
-
-    when :closed
-      @person_lines[start] = m.from
-      [[prefix_widget, open_widget, new_widget, attach_widget, starred_widget,
-        [color,
-        "#{m.from ? m.from.mediumname.fix_encoding! : '?'}, #{m.date.to_nice_s.fix_encoding!} (#{m.date.to_nice_distance_s.fix_encoding!})  #{m.snippet ? m.snippet.fix_encoding! : ''}"]]]
-
+      segments = [
+        m.from ? m.from.mediumname.fix_encoding! : '?',
+        # 'to',
+        # m.recipients.map { |l| l.shortname.fix_encoding! }.join(', '),
+        m.subj,
+        m.date.to_nice_s.fix_encoding!,
+        "(#{m.date.to_nice_distance_s.fix_encoding!})",
+      ]
+      content = HookManager.run "collapsed-header", :message => m, :state => state, :segments => segments
+      title_widget = [color, content || segments.join('  ')]
+      header_widgets = [prefix_widget, open_widget, new_widget, attach_widget, starred_widget, title_widget]
+      if $config[:patchwork]
+        m.patch.try do |patch|
+          patchwork_widget = [color, "  [#{patch.state_desc}]"]
+          header_widgets << patchwork_widget
+        end
+      end
+      [header_widgets]
     when :detailed
       @person_lines[start] = m.from
       from_line = [[prefix_widget, open_widget, new_widget, attach_widget, starred_widget,
@@ -985,6 +1022,12 @@ private
         "Date" => "#{m.date.to_message_nice_s} (#{m.date.to_nice_distance_s})",
         "Subject" => m.subj
       }
+
+      if $config[:patchwork]
+        m.patch.try do |patch|
+          headers["Patchwork"] = patch.state_desc(show_id: true)
+        end
+      end
 
       show_labels = @thread.labels - LabelManager::HIDDEN_RESERVED_LABELS
       unless show_labels.empty?

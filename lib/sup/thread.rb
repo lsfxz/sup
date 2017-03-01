@@ -146,6 +146,18 @@ class Thread
     end
   end
 
+  def patches
+    # expire cache
+    @patches = nil if PatchworkDatabase::updated_at.to_i > @patches_updated_at.to_i
+    # patchwork patches
+    @patches ||= \
+      begin
+        @patches_updated_at = Time.now.to_i
+        msgids = map { |m| m.try(:raw_message_id) }.compact
+        PatchworkDatabase::Patch.includes(:state, :delegate).where(msgid: msgids)
+      end
+  end
+
   def to_s
     "<thread containing: #{@containers.join ', '}>"
   end
@@ -341,8 +353,8 @@ class ThreadSet
       break if size >= num unless num == -1
       next if contains_id? mid
 
-      m = builder.call
-      load_thread_for_message m, :skip_killed => opts[:skip_killed], :load_deleted => opts[:load_deleted], :load_spam => opts[:load_spam]
+      m = builder.call rescue nil
+      load_thread_for_message m, :skip_killed => opts[:skip_killed], :load_deleted => opts[:load_deleted], :load_spam => opts[:load_spam] unless m.nil?
       yield size if block_given?
     end
   end

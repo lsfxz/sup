@@ -1,4 +1,5 @@
 require 'fileutils'
+require 'sup/startup'
 
 module Redwood
 
@@ -25,6 +26,7 @@ module InteractiveLock
     begin
       Index.lock
     rescue Index::LockError => e
+      StartupManager.stop
       begin
         Process.kill 0, e.pid.to_i # 0 signal test the existence of PID
         stream.puts <<EOS
